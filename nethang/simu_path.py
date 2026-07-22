@@ -411,10 +411,6 @@ class SimuPath:
         delete_iptables_rule('uplink')
         delete_iptables_rule('downlink')
 
-    def __del__(self):
-        """Delete the path by removing traffic control"""
-        self.deactivate()
-
     @staticmethod
     def _format_port(port) -> Optional[str]:
         """Validate a port filter value and format it for iptables --sport/--dport.
