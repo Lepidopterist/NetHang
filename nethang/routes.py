@@ -17,7 +17,7 @@ import sys
 import signal
 from . import app, ID_LOCK_FILE, ADMIN_USERNAME, PATHS_FILE
 from flask import render_template, request, jsonify, redirect, url_for, session, g
-from functools import wraps
+from functools import wraps, lru_cache
 from nethang.proc_lock import ProcLock
 from nethang.simu_path import SimuPathManager
 from nethang.id_manager import IDManager
@@ -48,8 +48,14 @@ def cleanup(sig, frame):
 signal.signal(signal.SIGINT, cleanup)  # Handles Ctrl+C
 signal.signal(signal.SIGTERM, cleanup)  # Handles kill/termination
 
+@lru_cache(maxsize=1)
 def check_privileges():
-    """Check if the application has sufficient privileges for tc and iptables"""
+    """Check if the application has sufficient privileges for tc and iptables
+
+    The tc probe below is mutating (it must add tc state to prove write
+    access), so the result is computed once per process and cached rather
+    than re-probed on every request.
+    """
     tc_status = check_tc()
     iptables_status = check_iptables()
 
@@ -144,10 +150,14 @@ def check_tc():
                 'error': 'tc command not found in system'
             }
 
-        # Run a harmless tc command
+        # Probe write access with a self-contained add+delete on loopback,
+        # so no tc state is left behind after the check
         result = subprocess.run(
             ['tc', 'qdisc', 'add', 'dev', 'lo', 'handle', '0', 'netem', 'delay', '0ms'],
             capture_output=True, text=True, check=True)
+        subprocess.run(
+            ['tc', 'qdisc', 'del', 'dev', 'lo', 'handle', '0', 'netem'],
+            capture_output=True, text=True, check=False)
         return {
             'tc_access': True,
             'output': result.stdout,
@@ -155,7 +165,7 @@ def check_tc():
         }
     except subprocess.CalledProcessError as e:
         return {
-            'tc_access': True,
+            'tc_access': False,
             'error': f'tc command failed: {str(e)}'
         }
     except PermissionError:
