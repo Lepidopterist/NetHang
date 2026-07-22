@@ -14,7 +14,7 @@ import os
 import time
 import json
 from . import app, CONFIG_PATH, CONFIG_FILE, MODELS_FILE, PATHS_FILE, IPT_LOCK_FILE, TC_LOCK_FILE, PATHS_LOCK_FILE
-from multiprocessing import Process
+import multiprocessing
 from dataclasses import dataclass
 from typing import Optional, Dict, List
 from nethang.proc_lock import ProcLock
@@ -345,8 +345,22 @@ class SimuPath:
             # Create the path in system by creating a new iptables rule
             self.create()
 
-            # Set up traffic control for both directions
-            self.simu_proc = Process(target=self._simu_path_worker, args=(), daemon=True)
+            # Set up traffic control for both directions.
+            #
+            # Explicitly use the 'fork' start method rather than whatever the
+            # platform/Python-version default is. On 'spawn' (which newer
+            # CPython versions have moved toward by default on some
+            # platforms), the child is a fresh interpreter that re-imports
+            # the whole nethang package to reconstruct enough state to call
+            # the target - which re-runs nethang/__init__.py's module-level
+            # code, rebuilding a brand-new SimuPathManager() singleton that
+            # runs reset_all_paths() and deactivates every path it finds
+            # marked active in paths.yaml, undoing the rule/tc state this
+            # same activate() call just created. 'fork' has the child
+            # inherit the parent's already-initialized memory directly, with
+            # no re-import and no re-running of any initialization code.
+            fork_ctx = multiprocessing.get_context('fork')
+            self.simu_proc = fork_ctx.Process(target=self._simu_path_worker, args=(), daemon=True)
             self.simu_proc.start()
             self.status = "active"
         except Exception as e:
