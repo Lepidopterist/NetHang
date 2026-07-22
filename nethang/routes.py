@@ -298,13 +298,19 @@ def manage_paths():
     if request.method == 'DELETE':
         path_id = request.args.get('id')
         app.logger.info(f"Deleting path {path_id}")
+
+        try:
+            path_id = int(path_id)
+        except (TypeError, ValueError):
+            return jsonify({'status': 'error', 'message': 'Invalid or missing path id'}), 400
+
         # Find the path to be deleted
-        path_to_delete = SimuPathManager().get_path_config(int(path_id))
+        path_to_delete = SimuPathManager().get_path_config(path_id)
 
         if path_to_delete:
             # Delete the path in system
             with ProcLock(ID_LOCK_FILE):
-                SimuPathManager().delete_path(int(path_id))
+                SimuPathManager().delete_path(path_id)
             return jsonify({'status': 'success', 'message': 'Path deleted successfully'})
         else:
             return jsonify({'status': 'error', 'message': 'Path not found'}), 404
