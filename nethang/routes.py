@@ -18,6 +18,7 @@ import signal
 from . import app, ID_LOCK_FILE, ADMIN_USERNAME, PATHS_FILE
 from flask import render_template, request, jsonify, redirect, url_for, session, g
 from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
 from nethang.proc_lock import ProcLock
 from nethang.simu_path import SimuPathManager
 from nethang.id_manager import IDManager
@@ -71,12 +72,19 @@ def before_request():
         g.no_interface = False
 
 def hash_password(password):
-    """Hash a password using MD5"""
-    return hashlib.md5(password.encode()).hexdigest()
+    """Hash a password using a strong, salted algorithm"""
+    return generate_password_hash(password)
+
+def _is_legacy_md5_hash(hashed_password):
+    """Detect password hashes stored by the old, unsalted MD5 scheme"""
+    return bool(hashed_password) and len(hashed_password) == 32 and \
+        all(c in '0123456789abcdef' for c in hashed_password.lower())
 
 def verify_password(password, hashed_password):
-    """Verify a password against its hash"""
-    return hash_password(password) == hashed_password
+    """Verify a password against its hash, honoring legacy MD5 hashes"""
+    if _is_legacy_md5_hash(hashed_password):
+        return hashlib.md5(password.encode()).hexdigest() == hashed_password
+    return check_password_hash(hashed_password, password)
 
 def login_required(f):
     @wraps(f)
@@ -186,6 +194,11 @@ def login():
         if not verify_password(password, admin_password):
             app.logger.error(f"Invalid password: {password}")
             return render_template('login.html', error='Invalid password')
+
+        # Transparently migrate legacy MD5-hashed passwords to the new scheme
+        if _is_legacy_md5_hash(admin_password):
+            config['admin_password'] = hash_password(password)
+            SimuPathManager().save_config(config)
 
         session['logged_in'] = True
         app.logger.info(f"Login successful for username: {username}")
