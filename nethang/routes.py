@@ -391,6 +391,7 @@ def about():
     return render_template('about.html', version=__version__, models_version=get_models_version())
 
 @app.route('/api/settings', methods=['GET', 'POST'])
+@login_required
 def settings_api():
     app.logger.info("Getting settings")
     if request.method == 'GET':
