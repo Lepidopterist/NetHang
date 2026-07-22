@@ -210,7 +210,7 @@ def login():
             return render_template('login.html', error='Invalid username')
 
         if not verify_password(password, admin_password):
-            app.logger.error(f"Invalid password: {password}")
+            app.logger.error(f"Invalid password attempt for username: {username}")
             return render_template('login.html', error='Invalid password')
 
         # Transparently migrate legacy MD5-hashed passwords to the new scheme
