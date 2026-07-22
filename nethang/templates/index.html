@@ -991,6 +991,19 @@
     }
 </style>
 <script>
+    // Escape untrusted strings before splicing them into innerHTML template
+    // literals below. Path filter/model/mode fields are user-controlled
+    // (posted to /api/paths) and stored verbatim, so they must never be
+    // treated as trusted markup.
+    function escapeHtml(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     $(function () {
         $('[data-toggle="tooltip"]').tooltip()
 
@@ -1404,8 +1417,8 @@
         // Update path details
         document.getElementById('pathSimMode').textContent = path.simu_settings.mode.toUpperCase();
 
-        const protBadge = `<span class="badge ${path.status === 'active' ? 'bg-success' : 'bg-secondary'}">${path.filter_settings.protocol.toUpperCase()}</span>`;
-        document.getElementById('pathDetailsHeader').innerHTML = `${protBadge} ${path.filter_settings.lan_ip}${path.filter_settings.protocol !== 'ip' ? ':' + path.filter_settings.lan_port : ''} ↔ ${path.filter_settings.wan_ip}${path.filter_settings.protocol !== 'ip' ? ':' + path.filter_settings.wan_port : ''}`;
+        const protBadge = `<span class="badge ${path.status === 'active' ? 'bg-success' : 'bg-secondary'}">${escapeHtml(path.filter_settings.protocol.toUpperCase())}</span>`;
+        document.getElementById('pathDetailsHeader').innerHTML = `${protBadge} ${escapeHtml(path.filter_settings.lan_ip)}${path.filter_settings.protocol !== 'ip' ? ':' + escapeHtml(path.filter_settings.lan_port) : ''} ↔ ${escapeHtml(path.filter_settings.wan_ip)}${path.filter_settings.protocol !== 'ip' ? ':' + escapeHtml(path.filter_settings.wan_port) : ''}`;
 
         // Show/hide model and uplink/downlink rows based on mode
         const modelRow = document.getElementById('modelRow');
@@ -1420,7 +1433,7 @@
             downlinkRow.style.display = 'none';
             uplinkRestrictionRow.style.display = 'none';
             downlinkRestrictionRow.style.display = 'none';
-            const modelBadge = `<span class="badge ${path.status === 'active' ? 'bg-success' : 'bg-secondary'}">${path.simu_settings.model.toUpperCase()}</span>`;
+            const modelBadge = `<span class="badge ${path.status === 'active' ? 'bg-success' : 'bg-secondary'}">${escapeHtml(path.simu_settings.model.toUpperCase())}</span>`;
             document.getElementById('pathModel').innerHTML = modelBadge;
         } else {
             modelRow.style.display = 'none';
@@ -1428,8 +1441,8 @@
             downlinkRow.style.display = 'table-row';
 
             // Update uplink and downlink with badges
-            const uplinkBadge = `<span class="badge ${path.status === 'active' ? path.simu_settings.uplink.mode === 'bypass' ? 'bg-success' : 'bg-warning' : 'bg-secondary'}">${path.simu_settings.uplink.mode.toUpperCase()}</span>`;
-            const downlinkBadge = `<span class="badge ${path.status === 'active' ? path.simu_settings.downlink.mode === 'bypass' ? 'bg-success' : 'bg-warning' : 'bg-secondary'}">${path.simu_settings.downlink.mode.toUpperCase()}</span>`;
+            const uplinkBadge = `<span class="badge ${path.status === 'active' ? path.simu_settings.uplink.mode === 'bypass' ? 'bg-success' : 'bg-warning' : 'bg-secondary'}">${escapeHtml(path.simu_settings.uplink.mode.toUpperCase())}</span>`;
+            const downlinkBadge = `<span class="badge ${path.status === 'active' ? path.simu_settings.downlink.mode === 'bypass' ? 'bg-success' : 'bg-warning' : 'bg-secondary'}">${escapeHtml(path.simu_settings.downlink.mode.toUpperCase())}</span>`;
             document.getElementById('pathUplink').innerHTML = uplinkBadge;
             document.getElementById('pathDownlink').innerHTML = downlinkBadge;
 
