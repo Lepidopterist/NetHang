@@ -567,4 +567,4 @@ models:
                 return yaml.safe_load(f)
         except Exception as e:
             app.logger.warning(f"Failed to load config file: {e}")
-            return self.fallback_models
+            return yaml.safe_load(self.fallback_models)
