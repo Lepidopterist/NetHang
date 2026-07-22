@@ -415,6 +415,35 @@ class SimuPath:
         """Delete the path by removing traffic control"""
         self.deactivate()
 
+    @staticmethod
+    def _format_port(port) -> Optional[str]:
+        """Validate a port filter value and format it for iptables --sport/--dport.
+
+        Accepts either a single port number (e.g. '8080') or a port range
+        in the 'start:end' format (e.g. '8000:9000'), matching the formats
+        iptables itself accepts for --sport/--dport. Returns None for
+        empty/'Any' values or anything that fails validation.
+        """
+        if not port or port == 'Any':
+            return None
+
+        port = str(port).strip()
+
+        def is_valid_port_num(value: str) -> bool:
+            return value.isdigit() and 0 < int(value) < 65536
+
+        if ':' in port:
+            start, sep, end = port.partition(':')
+            if not is_valid_port_num(start) or not is_valid_port_num(end):
+                return None
+            if int(start) > int(end):
+                return None
+            return '{}:{}'.format(start, end)
+
+        if not is_valid_port_num(port):
+            return None
+        return port
+
     def __get_delay_jitter_param(self, input_delay, input_jitter):
         delay_ = input_delay if input_delay != None else 0
         jitter_ = input_jitter if input_jitter != None else 0
