@@ -391,10 +391,13 @@ class SimuPath:
 
         def create_iptables_rule(direction_ : str):
             with ProcLock(IPT_LOCK_FILE):
+                # mute=False: rule creation is always expected to succeed,
+                # unlike the best-effort cleanup calls elsewhere, so a
+                # failure here should be visible in the logs.
                 SimuPathManager.run_cmd(['iptables', '-w', '5', '-t', 'mangle', '-A', 'FORWARD',
                     '-i', self.__direction[direction_]['from'], '-o', self.__direction[direction_]['to'],
                     *self._build_filter_args(direction_),
-                    '-j', 'MARK', '--set-mark', str(self.filter.mark)])
+                    '-j', 'MARK', '--set-mark', str(self.filter.mark)], mute=False)
 
         create_iptables_rule('uplink')
         create_iptables_rule('downlink')
@@ -779,8 +782,13 @@ class SimuPathManager:
             app.logger.warning(f"Failed to run command {' '.join(cmd)}: {e}")
             return ''
 
-        if not mute and result.returncode != 0:
-            app.logger.debug(f"Command {' '.join(cmd)} exited {result.returncode}: {result.stderr.strip()}")
+        if result.returncode != 0:
+            # mute=True calls are routine best-effort cleanup (e.g. deleting
+            # tc state that may not exist yet), so their failures are only
+            # debug-logged; mute=False calls are expected to succeed, so a
+            # failure there is surfaced at warning level.
+            log = app.logger.debug if mute else app.logger.warning
+            log(f"Command {' '.join(cmd)} exited {result.returncode}: {result.stderr.strip()}")
 
         return result.stdout
 
