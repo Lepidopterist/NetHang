@@ -11,7 +11,8 @@ import re
 import subprocess
 import time
 import random
-from . import app
+from . import app, IPT_LOCK_FILE
+from nethang.proc_lock import ProcLock
 from typing import Dict, List
 from threading import Thread
 
@@ -230,7 +231,14 @@ class TrafficMonitor:
         return stats_
 
     def _get_current_stats(self) -> Dict:
-        iptables_output = self._run_command(['iptables', '-w', '5', '-nvxL', 'FORWARD', '-t', 'mangle'])
+        # Locked the same as every other iptables invocation in the app:
+        # this stats read otherwise races unprotected against the rule
+        # create/delete calls in SimuPath.create()/delete(), which do use
+        # this lock - both still hit the kernel's own xtables lock, but
+        # only this app-level lock keeps our own calls from piling up on
+        # each other in an unpredictable order.
+        with ProcLock(IPT_LOCK_FILE):
+            iptables_output = self._run_command(['iptables', '-w', '5', '-nvxL', 'FORWARD', '-t', 'mangle'])
         tc_lan_output = self._run_command(['tc', '-s', 'qdisc', 'show', 'dev', self.lan_iface])
         tc_wan_output = self._run_command(['tc', '-s', 'qdisc', 'show', 'dev', self.wan_iface])
 
