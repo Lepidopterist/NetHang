@@ -28,6 +28,9 @@ PATHS_FILE = os.path.join(CONFIG_PATH, 'paths.yaml')
 # Log file
 LOG_FILE = os.path.join(CONFIG_PATH, 'nethang.log')
 
+# Flask session secret key (persisted so restarts don't invalidate sessions)
+SECRET_KEY_FILE = os.path.join(CONFIG_PATH, '.secret_key')
+
 # Create config directory if it doesn't exist
 os.makedirs(CONFIG_PATH, exist_ok=True)
 
