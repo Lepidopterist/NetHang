@@ -374,17 +374,19 @@ class SimuPath:
 
             if self.filter.protocol in ['udp', 'tcp']:
                 iptables_str_ += ' -p {}'.format(self.filter.protocol)
-                if self.filter.lan_port and self.filter.lan_port != 'Any' and int(self.filter.lan_port) > 0 and int(self.filter.lan_port) < 65536:
+                lan_port_ = self._format_port(self.filter.lan_port)
+                if lan_port_:
                     if direction_ == 'uplink':
-                        iptables_str_ += ' --sport {}'.format(self.filter.lan_port)
+                        iptables_str_ += ' --sport {}'.format(lan_port_)
                     else:
-                        iptables_str_ += ' --dport {}'.format(self.filter.lan_port)
+                        iptables_str_ += ' --dport {}'.format(lan_port_)
 
-                if self.filter.wan_port and self.filter.wan_port != 'Any' and int(self.filter.wan_port) > 0 and int(self.filter.wan_port) < 65536:
+                wan_port_ = self._format_port(self.filter.wan_port)
+                if wan_port_:
                     if direction_ == 'uplink':
-                        iptables_str_ += ' --dport {}'.format(self.filter.wan_port)
+                        iptables_str_ += ' --dport {}'.format(wan_port_)
                     else:
-                        iptables_str_ += ' --sport {}'.format(self.filter.wan_port)
+                        iptables_str_ += ' --sport {}'.format(wan_port_)
 
             with ProcLock(IPT_LOCK_FILE):
                 SimuPathManager.run_cmd('iptables -t mangle -A FORWARD -i {form_iface} -o {to_iface} {iptables_str} -j MARK --set-mark {host_num} > /dev/null 2>&1'.format(
@@ -412,17 +414,19 @@ class SimuPath:
 
             if self.filter.protocol in ['udp', 'tcp']:
                 iptables_str_ += ' -p {}'.format(self.filter.protocol)
-                if self.filter.lan_port and self.filter.lan_port != 'Any' and int(self.filter.lan_port) > 0 and int(self.filter.lan_port) < 65536:
+                lan_port_ = self._format_port(self.filter.lan_port)
+                if lan_port_:
                     if direction_ == 'uplink':
-                        iptables_str_ += ' --sport {}'.format(self.filter.lan_port)
+                        iptables_str_ += ' --sport {}'.format(lan_port_)
                     else:
-                        iptables_str_ += ' --dport {}'.format(self.filter.lan_port)
+                        iptables_str_ += ' --dport {}'.format(lan_port_)
 
-                if self.filter.wan_port and self.filter.wan_port != 'Any' and int(self.filter.wan_port) > 0 and int(self.filter.wan_port) < 65536:
+                wan_port_ = self._format_port(self.filter.wan_port)
+                if wan_port_:
                     if direction_ == 'uplink':
-                        iptables_str_ += ' --dport {}'.format(self.filter.wan_port)
+                        iptables_str_ += ' --dport {}'.format(wan_port_)
                     else:
-                        iptables_str_ += ' --sport {}'.format(self.filter.wan_port)
+                        iptables_str_ += ' --sport {}'.format(wan_port_)
 
             with ProcLock(IPT_LOCK_FILE):
                 SimuPathManager.run_cmd('iptables -t mangle -D FORWARD -i {form_iface} -o {to_iface} {iptables_str} -j MARK --set-mark {host_num} > /dev/null 2>&1'.format(
@@ -434,6 +438,35 @@ class SimuPath:
     def __del__(self):
         """Delete the path by removing traffic control"""
         self.deactivate()
+
+    @staticmethod
+    def _format_port(port) -> Optional[str]:
+        """Validate a port filter value and format it for iptables --sport/--dport.
+
+        Accepts either a single port number (e.g. '8080') or a port range
+        in the 'start:end' format (e.g. '8000:9000'), matching the formats
+        iptables itself accepts for --sport/--dport. Returns None for
+        empty/'Any' values or anything that fails validation.
+        """
+        if not port or port == 'Any':
+            return None
+
+        port = str(port).strip()
+
+        def is_valid_port_num(value: str) -> bool:
+            return value.isdigit() and 0 < int(value) < 65536
+
+        if ':' in port:
+            start, sep, end = port.partition(':')
+            if not is_valid_port_num(start) or not is_valid_port_num(end):
+                return None
+            if int(start) > int(end):
+                return None
+            return '{}:{}'.format(start, end)
+
+        if not is_valid_port_num(port):
+            return None
+        return port
 
     def __get_delay_jitter_param(self, input_delay, input_jitter):
         delay_ = input_delay if input_delay != None else 0
