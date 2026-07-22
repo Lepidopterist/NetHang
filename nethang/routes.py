@@ -15,9 +15,11 @@ import tomli
 import yaml
 import sys
 import signal
-from . import app, ID_LOCK_FILE, ADMIN_USERNAME, PATHS_FILE
+from . import app, ID_LOCK_FILE, ADMIN_USERNAME, PATHS_FILE, SECRET_KEY_FILE
 from flask import render_template, request, jsonify, redirect, url_for, session, g
 from functools import wraps, lru_cache
+from functools import wraps
+from werkzeug.security import generate_password_hash, check_password_hash
 from nethang.proc_lock import ProcLock
 from nethang.simu_path import SimuPathManager
 from nethang.id_manager import IDManager
@@ -25,7 +27,25 @@ from nethang.extensions import socketio
 from nethang.config_manager import ConfigManager
 from nethang.version import __version__
 
-app.config['SECRET_KEY'] = os.urandom(24)
+def load_or_create_secret_key():
+    """Load the persisted Flask session secret key, generating one on first run.
+
+    Generating a fresh key on every process start (the previous behavior)
+    invalidates every existing session on each restart/redeploy.
+    """
+    if os.path.exists(SECRET_KEY_FILE):
+        with open(SECRET_KEY_FILE, 'rb') as f:
+            key = f.read()
+            if key:
+                return key
+
+    key = os.urandom(24)
+    with open(SECRET_KEY_FILE, 'wb') as f:
+        f.write(key)
+    os.chmod(SECRET_KEY_FILE, 0o600)
+    return key
+
+app.config['SECRET_KEY'] = load_or_create_secret_key()
 socketio.init_app(app)
 
 ConfigManager().ensure_models()
@@ -77,12 +97,19 @@ def before_request():
         g.no_interface = False
 
 def hash_password(password):
-    """Hash a password using MD5"""
-    return hashlib.md5(password.encode()).hexdigest()
+    """Hash a password using a strong, salted algorithm"""
+    return generate_password_hash(password)
+
+def _is_legacy_md5_hash(hashed_password):
+    """Detect password hashes stored by the old, unsalted MD5 scheme"""
+    return bool(hashed_password) and len(hashed_password) == 32 and \
+        all(c in '0123456789abcdef' for c in hashed_password.lower())
 
 def verify_password(password, hashed_password):
-    """Verify a password against its hash"""
-    return hash_password(password) == hashed_password
+    """Verify a password against its hash, honoring legacy MD5 hashes"""
+    if _is_legacy_md5_hash(hashed_password):
+        return hashlib.md5(password.encode()).hexdigest() == hashed_password
+    return check_password_hash(hashed_password, password)
 
 def login_required(f):
     @wraps(f)
@@ -196,8 +223,13 @@ def login():
             return render_template('login.html', error='Invalid username')
 
         if not verify_password(password, admin_password):
-            app.logger.error(f"Invalid password: {password}")
+            app.logger.error(f"Invalid password attempt for username: {username}")
             return render_template('login.html', error='Invalid password')
+
+        # Transparently migrate legacy MD5-hashed passwords to the new scheme
+        if _is_legacy_md5_hash(admin_password):
+            config['admin_password'] = hash_password(password)
+            SimuPathManager().save_config(config)
 
         session['logged_in'] = True
         app.logger.info(f"Login successful for username: {username}")
