@@ -262,6 +262,48 @@ def index():
         app.logger.error(f"Error rendering index page: {e}")
         return render_template('error.html', error=str(e))
 
+VALID_PROTOCOLS = ('tcp', 'udp', 'ip')
+VALID_SIMU_MODES = ('model', 'custom')
+REQUIRED_FILTER_KEYS = ('protocol', 'lan_ip', 'lan_port', 'wan_ip', 'wan_port')
+
+def _validate_path_payload(data):
+    """Validate the shape of a POST/PUT /api/paths body.
+
+    Returns an error message string if invalid, or None if the payload
+    has everything SimuPath.from_dict() needs to construct a path.
+    """
+    if not isinstance(data, dict):
+        return 'Request body must be a JSON object'
+
+    filter_settings = data.get('filter_settings')
+    if not isinstance(filter_settings, dict):
+        return 'Missing or invalid filter_settings'
+
+    for key in REQUIRED_FILTER_KEYS:
+        if key not in filter_settings:
+            return f'Missing filter_settings.{key}'
+
+    if filter_settings['protocol'] not in VALID_PROTOCOLS:
+        return f'filter_settings.protocol must be one of {VALID_PROTOCOLS}'
+
+    simu_settings = data.get('simu_settings')
+    if not isinstance(simu_settings, dict):
+        return 'Missing or invalid simu_settings'
+
+    if simu_settings.get('mode') not in VALID_SIMU_MODES:
+        return f'simu_settings.mode must be one of {VALID_SIMU_MODES}'
+
+    for direction in ('uplink', 'downlink'):
+        if not isinstance(simu_settings.get(direction), dict):
+            return f'Missing or invalid simu_settings.{direction}'
+        if 'mode' not in simu_settings[direction]:
+            return f'Missing simu_settings.{direction}.mode'
+
+    if 'status' not in data:
+        return 'Missing status'
+
+    return None
+
 @app.route('/api/paths', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @login_required
 def manage_paths():
@@ -273,6 +315,10 @@ def manage_paths():
     # Add path
     if request.method == 'POST':
         new_path = request.json
+
+        validation_error = _validate_path_payload(new_path)
+        if validation_error:
+            return jsonify({'status': 'error', 'message': validation_error}), 400
 
         # Get a new path ID from IDManager
         id_manager = IDManager(paths_file=PATHS_FILE, id_range=SimuPathManager.mark_range)
@@ -291,6 +337,11 @@ def manage_paths():
     # Update path
     if request.method == 'PUT':
         app.logger.info(f"Updating path {request.json.get('id')}")
+
+        validation_error = _validate_path_payload(request.json)
+        if validation_error:
+            return jsonify({'status': 'error', 'message': validation_error}), 400
+
         SimuPathManager().update_path_config(request.json.get('id'), request.json)
         return jsonify({'status': 'success', 'message': 'Path updated successfully'})
 
