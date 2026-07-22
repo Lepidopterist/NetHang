@@ -13,10 +13,13 @@ import hashlib
 import hmac
 import secrets
 import subprocess
+import time
 import tomli
 import yaml
 import sys
 import signal
+from collections import defaultdict
+from threading import Lock as ThreadLock
 from . import app, ID_LOCK_FILE, ADMIN_USERNAME, PATHS_FILE, SECRET_KEY_FILE
 from flask import render_template, request, jsonify, redirect, url_for, session, g
 from functools import wraps, lru_cache
@@ -239,9 +242,39 @@ def check_tc():
             'error': 'tc command not found in system'
         }
 
+# Login attempt rate limiting. This is an in-memory, per-process counter:
+# it resets on restart and isn't shared across worker processes, but it's
+# enough to stop unbounded online brute-forcing of the single admin account
+# from a given source in the common single-process deployment.
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 300
+_login_attempts = defaultdict(list)
+_login_attempts_lock = ThreadLock()
+
+def _login_rate_limited(client_ip):
+    now = time.time()
+    with _login_attempts_lock:
+        attempts = _login_attempts[client_ip]
+        attempts[:] = [t for t in attempts if now - t < LOGIN_WINDOW_SECONDS]
+        return len(attempts) >= LOGIN_MAX_ATTEMPTS
+
+def _record_failed_login(client_ip):
+    with _login_attempts_lock:
+        _login_attempts[client_ip].append(time.time())
+
+def _clear_failed_login(client_ip):
+    with _login_attempts_lock:
+        _login_attempts.pop(client_ip, None)
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
+        client_ip = request.remote_addr
+
+        if _login_rate_limited(client_ip):
+            app.logger.warning(f"Login rate limit exceeded for {client_ip}")
+            return render_template('login.html', error='Too many failed login attempts. Please try again later.'), 429
+
         username = request.form.get('username')
         password = request.form.get('password')
 
@@ -250,12 +283,16 @@ def login():
         admin_password = config.get('admin_password', hash_password('admin'))  # Default to hashed 'admin' if not set
 
         if username != ADMIN_USERNAME:
+            _record_failed_login(client_ip)
             app.logger.error(f"Invalid username: {username}")
             return render_template('login.html', error='Invalid username')
 
         if not verify_password(password, admin_password):
+            _record_failed_login(client_ip)
             app.logger.error(f"Invalid password attempt for username: {username}")
             return render_template('login.html', error='Invalid password')
+
+        _clear_failed_login(client_ip)
 
         # Transparently migrate legacy MD5-hashed passwords to the new scheme
         if _is_legacy_md5_hash(admin_password):
