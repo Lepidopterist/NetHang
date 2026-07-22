@@ -18,6 +18,7 @@ ADMIN_USERNAME = 'admin'
 # Lock files
 IPT_LOCK_FILE : str = '/tmp/nethang_iptables_modi.lock'
 ID_LOCK_FILE : str = '/tmp/nethang_id.lock'
+TC_LOCK_FILE : str = '/tmp/nethang_tc_modi.lock'
 
 # Config files
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.nethang')

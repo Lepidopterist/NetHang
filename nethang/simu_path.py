@@ -13,7 +13,7 @@ import yaml
 import os
 import time
 import json
-from . import app, CONFIG_PATH, CONFIG_FILE, MODELS_FILE, PATHS_FILE, IPT_LOCK_FILE
+from . import app, CONFIG_PATH, CONFIG_FILE, MODELS_FILE, PATHS_FILE, IPT_LOCK_FILE, TC_LOCK_FILE
 from multiprocessing import Process
 from dataclasses import dataclass
 from typing import Optional, Dict, List
@@ -124,11 +124,12 @@ class SimuPath:
             handle = SimuPathManager.handle_name
             host_num = str(self.filter.mark)
 
-            SimuPathManager.run_cmd(['tc', 'filter', 'del', 'dev', iface, 'parent', f'{handle}:',
-                'handle', host_num, 'protocol', 'ip', 'pref', str(SimuPathManager.PRIO), 'fw'])
-            SimuPathManager.run_cmd(['tc', 'class', 'del', 'dev', iface, 'classid', f'{handle}:{host_num}'])
-            SimuPathManager.run_cmd(['tc', 'qdisc', 'del', 'dev', iface, 'parent', f'{handle}:{host_num}',
-                'handle', host_num])
+            with ProcLock(TC_LOCK_FILE):
+                SimuPathManager.run_cmd(['tc', 'filter', 'del', 'dev', iface, 'parent', f'{handle}:',
+                    'handle', host_num, 'protocol', 'ip', 'pref', str(SimuPathManager.PRIO), 'fw'])
+                SimuPathManager.run_cmd(['tc', 'class', 'del', 'dev', iface, 'classid', f'{handle}:{host_num}'])
+                SimuPathManager.run_cmd(['tc', 'qdisc', 'del', 'dev', iface, 'parent', f'{handle}:{host_num}',
+                    'handle', host_num])
         else:
             app.logger.error(f'Cannot delete rules: filter not available')
 
@@ -140,10 +141,11 @@ class SimuPath:
         iface = self.__direction[direction_]['to']
         handle = SimuPathManager.handle_name
 
-        SimuPathManager.run_cmd(['tc', 'qdisc', 'add', 'dev', iface, 'root', 'handle', f'{handle}:',
-            'htb', 'default', '0xffff', 'direct_qlen', '1000'])
-        SimuPathManager.run_cmd(['tc', 'class', 'add', 'dev', iface, 'parent', f'{handle}:',
-            'classid', f'{handle}:ffff', 'htb', 'rate', f'{SimuPathManager.MAX_RATE}kbit', 'quantum', '60000'])
+        with ProcLock(TC_LOCK_FILE):
+            SimuPathManager.run_cmd(['tc', 'qdisc', 'add', 'dev', iface, 'root', 'handle', f'{handle}:',
+                'htb', 'default', '0xffff', 'direct_qlen', '1000'])
+            SimuPathManager.run_cmd(['tc', 'class', 'add', 'dev', iface, 'parent', f'{handle}:',
+                'classid', f'{handle}:ffff', 'htb', 'rate', f'{SimuPathManager.MAX_RATE}kbit', 'quantum', '60000'])
 
     def _apply_tc(self, direction_ : str, opt : str = 'add',
             rate_limit : int = 1000000, rate_ceil : int = 1000000,
@@ -226,14 +228,15 @@ class SimuPath:
         handle = SimuPathManager.handle_name
         host_num = str(self.filter.mark)
 
-        SimuPathManager.run_cmd(['tc', 'class', opt, 'dev', iface, 'parent', f'{handle}:',
-            'classid', f'{handle}:{host_num}'] + class_args_ + ['quantum', '60000'])
-        SimuPathManager.run_cmd(['tc', 'qdisc', opt, 'dev', iface, 'parent', f'{handle}:{host_num}',
-            'handle', f'{host_num}:', 'netem'] + netem_args_)
-        if opt == 'add':
-            SimuPathManager.run_cmd(['tc', 'filter', 'add', 'dev', iface, 'parent', f'{handle}:',
-                'prio', str(SimuPathManager.PRIO), 'protocol', 'ip', 'handle', host_num, 'fw',
-                'flowid', f'{handle}:{host_num}'])
+        with ProcLock(TC_LOCK_FILE):
+            SimuPathManager.run_cmd(['tc', 'class', opt, 'dev', iface, 'parent', f'{handle}:',
+                'classid', f'{handle}:{host_num}'] + class_args_ + ['quantum', '60000'])
+            SimuPathManager.run_cmd(['tc', 'qdisc', opt, 'dev', iface, 'parent', f'{handle}:{host_num}',
+                'handle', f'{host_num}:', 'netem'] + netem_args_)
+            if opt == 'add':
+                SimuPathManager.run_cmd(['tc', 'filter', 'add', 'dev', iface, 'parent', f'{handle}:',
+                    'prio', str(SimuPathManager.PRIO), 'protocol', 'ip', 'handle', host_num, 'fw',
+                    'flowid', f'{handle}:{host_num}'])
 
     def _run_custom(self):
         """Run custom simulation"""
