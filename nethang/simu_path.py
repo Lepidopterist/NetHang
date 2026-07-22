@@ -120,12 +120,15 @@ class SimuPath:
         """Cleanup the path by removing traffic control"""
         app.logger.info(f"Cleaning up path {self.filter.mark} {direction_}")
         if hasattr(self, 'filter'):
-            SimuPathManager.run_cmd('tc filter del dev {iface} parent {handle}: handle {host_num} protocol ip pref {prio} fw'.format(
-                iface = self.__direction[direction_]['to'], handle = SimuPathManager.handle_name, host_num = self.filter.mark, prio = SimuPathManager.PRIO ))
-            SimuPathManager.run_cmd('tc class del dev {iface} classid {handle}:{host_num}'.format(
-                iface = self.__direction[direction_]['to'], handle = SimuPathManager.handle_name, host_num = self.filter.mark ))
-            SimuPathManager.run_cmd('tc qdisc del dev {iface} parent {handle}:{host_num} handle {host_num}'.format(
-                iface = self.__direction[direction_]['to'], handle = SimuPathManager.handle_name, host_num = self.filter.mark ))
+            iface = self.__direction[direction_]['to']
+            handle = SimuPathManager.handle_name
+            host_num = str(self.filter.mark)
+
+            SimuPathManager.run_cmd(['tc', 'filter', 'del', 'dev', iface, 'parent', f'{handle}:',
+                'handle', host_num, 'protocol', 'ip', 'pref', str(SimuPathManager.PRIO), 'fw'])
+            SimuPathManager.run_cmd(['tc', 'class', 'del', 'dev', iface, 'classid', f'{handle}:{host_num}'])
+            SimuPathManager.run_cmd(['tc', 'qdisc', 'del', 'dev', iface, 'parent', f'{handle}:{host_num}',
+                'handle', host_num])
         else:
             app.logger.error(f'Cannot delete rules: filter not available')
 
@@ -134,12 +137,13 @@ class SimuPath:
     def _init_tc(self, direction_ : str):
         """Initialize traffic control for a direction"""
         app.logger.info(f"Initializing traffic control for {direction_}")
-        # SimuPathManager.run_cmd('tc qdisc add dev {iface} root handle {handle}: stab overhead {overhead} linklayer ethernet htb default 0xffff direct_qlen 1000'.format(
-        #     iface = self.__direction[direction_]['to'], handle = SimuPathManager.handle_name, overhead = SimuPathManager.OVERHEAD))
-        SimuPathManager.run_cmd('tc qdisc add dev {iface} root handle {handle}: htb default 0xffff direct_qlen 1000'.format(
-            iface = self.__direction[direction_]['to'], handle = SimuPathManager.handle_name))
-        SimuPathManager.run_cmd('tc class add dev {iface} parent {handle}: classid {handle}:ffff htb rate {rate}kbit quantum 60000'.format(
-            iface = self.__direction[direction_]['to'], handle = SimuPathManager.handle_name, rate = SimuPathManager.MAX_RATE))
+        iface = self.__direction[direction_]['to']
+        handle = SimuPathManager.handle_name
+
+        SimuPathManager.run_cmd(['tc', 'qdisc', 'add', 'dev', iface, 'root', 'handle', f'{handle}:',
+            'htb', 'default', '0xffff', 'direct_qlen', '1000'])
+        SimuPathManager.run_cmd(['tc', 'class', 'add', 'dev', iface, 'parent', f'{handle}:',
+            'classid', f'{handle}:ffff', 'htb', 'rate', f'{SimuPathManager.MAX_RATE}kbit', 'quantum', '60000'])
 
     def _apply_tc(self, direction_ : str, opt : str = 'add',
             rate_limit : int = 1000000, rate_ceil : int = 1000000,
@@ -154,40 +158,39 @@ class SimuPath:
             throttle_type : str = 'off'
             ):
 
-        class_str_ = ''
+        class_args_ = ['htb']
         if throttle_type == 'off':
             rate_limit = SimuPathManager.MAX_RATE
 
         # If rate_limit is greater than MAX_RATE, using MAX_RATE as rate
         # Otherwise, using rate_limit as rate
         if rate_limit >= SimuPathManager.MAX_RATE:
-            class_str_ += ' rate {}Gbit'.format(SimuPathManager.MAX_RATE / 1000000)
+            class_args_ += ['rate', '{}Gbit'.format(SimuPathManager.MAX_RATE / 1000000)]
         else:
-            class_str_ += ' rate {}Kbit'.format(rate_limit)
+            class_args_ += ['rate', '{}Kbit'.format(rate_limit)]
 
         # If rate_ceil is greater than or equal to MAX_RATE, using rate_limit as ceil
         # Otherwise, using rate_ceil as ceil
         if rate_ceil >= SimuPathManager.MAX_RATE:
-            class_str_ += ' ceil {}Kbit'.format(rate_limit)
+            class_args_ += ['ceil', '{}Kbit'.format(rate_limit)]
         else:
-            class_str_ += ' ceil {}Kbit'.format(rate_ceil)
+            class_args_ += ['ceil', '{}Kbit'.format(rate_ceil)]
 
         # If rate_burst is less than or equal to 0, using rate_limit / 80 as burst
         # Otherwise, using rate_burst as burst
         if rate_burst <= 0:
-            class_str_ += ' burst {}KB'.format(round(rate_limit / 80, 2))
+            class_args_ += ['burst', '{}KB'.format(round(rate_limit / 80, 2))]
         else:
-            class_str_ += ' burst {}KB'.format(rate_burst)
+            class_args_ += ['burst', '{}KB'.format(rate_burst)]
 
         # If rate_cburst is less than or equal to 0, using rate_limit / 80 as cburst
         # Otherwise, using rate_cburst as cburst
         if rate_cburst <= 0:
-            class_str_ += ' cburst {}KB'.format(round(rate_limit / 80, 2))
+            class_args_ += ['cburst', '{}KB'.format(round(rate_limit / 80, 2))]
         else:
-            class_str_ += ' cburst {}KB'.format(rate_cburst)
+            class_args_ += ['cburst', '{}KB'.format(rate_cburst)]
 
-        netem_str_ = ''
-        netem_str_ += f'limit {qdepth}'
+        netem_args_ = ['limit', str(qdepth)]
 
         if latency_type != 'off':
             # If jitter-reorder-off is selected (jitter > 0 and latency_type == 'jitter-reorder-off'),
@@ -198,33 +201,39 @@ class SimuPath:
                 min_delay, max_delay = self.__get_slot_jitter_param(jitter)
 
                 # Use slot for jitter
-                netem_str_ += f' delay {delay}ms slot {min_delay}ms {max_delay}ms'
+                netem_args_ += ['delay', f'{delay}ms', 'slot', f'{min_delay}ms', f'{max_delay}ms']
             else:
                 # Use delay + jitter approach if latency_type is not 'jitter-reorder-off'
                 delay_, jitter_ = self.__get_delay_jitter_param(delay, jitter)
                 if delay_ != 0 or jitter_ != 0:
-                    netem_str_ += f' delay {delay_}ms'
+                    netem_args_ += ['delay', f'{delay_}ms']
                     if jitter_ != 0:
-                        netem_str_ += f' {jitter_}ms distribution {jitter_dist}'
+                        netem_args_ += [f'{jitter_}ms', 'distribution', jitter_dist]
                 # Set slot to 0 0 to make sure slot is not used
-                netem_str_ += f' slot 0 0'
+                netem_args_ += ['slot', '0', '0']
 
         if loss_type != 'off':
             if loss_type == 'random':
-                netem_str_ += f' loss {loss:.6f}%'
+                netem_args_ += ['loss', f'{loss:.6f}%']
             else:
                 probability_good2bad, probability_bad2good = self.__get_loss_state_param(loss / 100.0, loss_type)
-                netem_str_ += f' loss gemodel {probability_good2bad*100:.6f}% {probability_bad2good*100:.6f}%'
+                netem_args_ += ['loss', 'gemodel', f'{probability_good2bad*100:.6f}%', f'{probability_bad2good*100:.6f}%']
 
-        app.logger.info(f"class_str: {class_str_}")
-        app.logger.info(f"netem_str: {netem_str_}")
-        SimuPathManager.run_cmd('tc class {opt} dev {iface} parent {handle}: classid {handle}:{host_num} htb {class_str} quantum 60000'.format(
-            opt = opt, iface = self.__direction[direction_]['to'], handle = SimuPathManager.handle_name, host_num = self.filter.mark, class_str = class_str_))
-        SimuPathManager.run_cmd('tc qdisc {opt} dev {iface} parent {handle}:{host_num} handle {host_num}: netem {netem_str}'.format(
-            opt = opt, iface = self.__direction[direction_]['to'], handle = SimuPathManager.handle_name, host_num = self.filter.mark, netem_str = netem_str_))
+        app.logger.info(f"class_args: {class_args_}")
+        app.logger.info(f"netem_args: {netem_args_}")
+
+        iface = self.__direction[direction_]['to']
+        handle = SimuPathManager.handle_name
+        host_num = str(self.filter.mark)
+
+        SimuPathManager.run_cmd(['tc', 'class', opt, 'dev', iface, 'parent', f'{handle}:',
+            'classid', f'{handle}:{host_num}'] + class_args_ + ['quantum', '60000'])
+        SimuPathManager.run_cmd(['tc', 'qdisc', opt, 'dev', iface, 'parent', f'{handle}:{host_num}',
+            'handle', f'{host_num}:', 'netem'] + netem_args_)
         if opt == 'add':
-            SimuPathManager.run_cmd('tc filter add dev {iface} parent {handle}: prio {prio} protocol ip handle {host_num} fw flowid {handle}:{host_num}'.format(
-            iface = self.__direction[direction_]['to'], handle = SimuPathManager.handle_name, prio = SimuPathManager.PRIO, host_num = self.filter.mark))
+            SimuPathManager.run_cmd(['tc', 'filter', 'add', 'dev', iface, 'parent', f'{handle}:',
+                'prio', str(SimuPathManager.PRIO), 'protocol', 'ip', 'handle', host_num, 'fw',
+                'flowid', f'{handle}:{host_num}'])
 
     def _run_custom(self):
         """Run custom simulation"""
@@ -354,43 +363,38 @@ class SimuPath:
                 self._cleanup(direction)
             self.status = "inactive"
 
+    def _build_filter_args(self, direction_ : str) -> List[str]:
+        """Build the iptables match arguments (IPs/protocol/ports) for a direction"""
+        args = []
+
+        if self.filter.lan_ip:
+            args += ['-s', self.filter.lan_ip] if direction_ == 'uplink' else ['-d', self.filter.lan_ip]
+
+        if self.filter.wan_ip:
+            args += ['-d', self.filter.wan_ip] if direction_ == 'uplink' else ['-s', self.filter.wan_ip]
+
+        if self.filter.protocol in ['udp', 'tcp']:
+            args += ['-p', self.filter.protocol]
+
+            lan_port_ = self._format_port(self.filter.lan_port)
+            if lan_port_:
+                args += ['--sport', lan_port_] if direction_ == 'uplink' else ['--dport', lan_port_]
+
+            wan_port_ = self._format_port(self.filter.wan_port)
+            if wan_port_:
+                args += ['--dport', wan_port_] if direction_ == 'uplink' else ['--sport', wan_port_]
+
+        return args
+
     def create(self):
         """ Create the path in system by creating a new iptables rule """
 
         def create_iptables_rule(direction_ : str):
-            iptables_str_ = ''
-
-            if self.filter.lan_ip:
-                if direction_ == 'uplink':
-                    iptables_str_ += ' -s {}'.format(self.filter.lan_ip)
-                else:
-                    iptables_str_ += ' -d {}'.format(self.filter.lan_ip)
-
-            if self.filter.wan_ip:
-                if direction_ == 'uplink':
-                    iptables_str_ += ' -d {}'.format(self.filter.wan_ip)
-                else:
-                    iptables_str_ += ' -s {}'.format(self.filter.wan_ip)
-
-            if self.filter.protocol in ['udp', 'tcp']:
-                iptables_str_ += ' -p {}'.format(self.filter.protocol)
-                lan_port_ = self._format_port(self.filter.lan_port)
-                if lan_port_:
-                    if direction_ == 'uplink':
-                        iptables_str_ += ' --sport {}'.format(lan_port_)
-                    else:
-                        iptables_str_ += ' --dport {}'.format(lan_port_)
-
-                wan_port_ = self._format_port(self.filter.wan_port)
-                if wan_port_:
-                    if direction_ == 'uplink':
-                        iptables_str_ += ' --dport {}'.format(wan_port_)
-                    else:
-                        iptables_str_ += ' --sport {}'.format(wan_port_)
-
             with ProcLock(IPT_LOCK_FILE):
-                SimuPathManager.run_cmd('iptables -t mangle -A FORWARD -i {form_iface} -o {to_iface} {iptables_str} -j MARK --set-mark {host_num} > /dev/null 2>&1'.format(
-                    form_iface = self.__direction[direction_]['from'], to_iface = self.__direction[direction_]['to'], iptables_str=iptables_str_, host_num = self.filter.mark))
+                SimuPathManager.run_cmd(['iptables', '-t', 'mangle', '-A', 'FORWARD',
+                    '-i', self.__direction[direction_]['from'], '-o', self.__direction[direction_]['to'],
+                    *self._build_filter_args(direction_),
+                    '-j', 'MARK', '--set-mark', str(self.filter.mark)])
 
         create_iptables_rule('uplink')
         create_iptables_rule('downlink')
@@ -398,39 +402,11 @@ class SimuPath:
     def delete(self):
         """Delete the path in system by deleting the iptables rule"""
         def delete_iptables_rule(direction_ : str):
-            iptables_str_ = ''
-
-            if self.filter.lan_ip:
-                if direction_ == 'uplink':
-                    iptables_str_ += ' -s {}'.format(self.filter.lan_ip)
-                else:
-                    iptables_str_ += ' -d {}'.format(self.filter.lan_ip)
-
-            if self.filter.wan_ip:
-                if direction_ == 'uplink':
-                    iptables_str_ += ' -d {}'.format(self.filter.wan_ip)
-                else:
-                    iptables_str_ += ' -s {}'.format(self.filter.wan_ip)
-
-            if self.filter.protocol in ['udp', 'tcp']:
-                iptables_str_ += ' -p {}'.format(self.filter.protocol)
-                lan_port_ = self._format_port(self.filter.lan_port)
-                if lan_port_:
-                    if direction_ == 'uplink':
-                        iptables_str_ += ' --sport {}'.format(lan_port_)
-                    else:
-                        iptables_str_ += ' --dport {}'.format(lan_port_)
-
-                wan_port_ = self._format_port(self.filter.wan_port)
-                if wan_port_:
-                    if direction_ == 'uplink':
-                        iptables_str_ += ' --dport {}'.format(wan_port_)
-                    else:
-                        iptables_str_ += ' --sport {}'.format(wan_port_)
-
             with ProcLock(IPT_LOCK_FILE):
-                SimuPathManager.run_cmd('iptables -t mangle -D FORWARD -i {form_iface} -o {to_iface} {iptables_str} -j MARK --set-mark {host_num} > /dev/null 2>&1'.format(
-                    form_iface = self.__direction[direction_]['from'], to_iface = self.__direction[direction_]['to'], iptables_str=iptables_str_, host_num = self.filter.mark))
+                SimuPathManager.run_cmd(['iptables', '-t', 'mangle', '-D', 'FORWARD',
+                    '-i', self.__direction[direction_]['from'], '-o', self.__direction[direction_]['to'],
+                    *self._build_filter_args(direction_),
+                    '-j', 'MARK', '--set-mark', str(self.filter.mark)])
 
         delete_iptables_rule('uplink')
         delete_iptables_rule('downlink')
@@ -787,13 +763,26 @@ class SimuPathManager:
         socketio.emit('config_updated')
 
     @staticmethod
-    def run_cmd(cmd : str = '', mute : bool = True) -> str:
-        app.logger.debug(f"Run command: {cmd}")
-        if mute:
-            cmd += ' > /dev/null 2>&1'
+    def run_cmd(cmd : List[str], mute : bool = True) -> str:
+        """Run a system command given as an argv list (no shell involved).
 
-        ret = os.popen(cmd).read()
-        return ret
+        Commands are executed directly via subprocess rather than a shell
+        string, so values coming from user input (IPs, ports, etc.) can
+        never be interpreted as shell syntax. Failures are swallowed by
+        default (matching prior behavior, since callers routinely invoke
+        best-effort cleanup commands that are expected to fail).
+        """
+        app.logger.debug(f"Run command: {' '.join(cmd)}")
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        except (OSError, subprocess.SubprocessError) as e:
+            app.logger.warning(f"Failed to run command {' '.join(cmd)}: {e}")
+            return ''
+
+        if not mute and result.returncode != 0:
+            app.logger.debug(f"Command {' '.join(cmd)} exited {result.returncode}: {result.stderr.strip()}")
+
+        return result.stdout
 
     @staticmethod
     def merge_dicts(base: dict, update: dict) -> dict:
