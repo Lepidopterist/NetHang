@@ -11,14 +11,12 @@ import os
 import netifaces
 import hashlib
 import subprocess
-import tomli
 import yaml
 import sys
 import signal
 from . import app, ID_LOCK_FILE, ADMIN_USERNAME, PATHS_FILE, SECRET_KEY_FILE
 from flask import render_template, request, jsonify, redirect, url_for, session, g
 from functools import wraps, lru_cache
-from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from nethang.proc_lock import ProcLock
 from nethang.simu_path import SimuPathManager
@@ -360,16 +358,6 @@ def config():
     current_config = SimuPathManager().load_config()
     interfaces = get_network_interfaces()
     return render_template('config.html', config=current_config, interfaces=interfaces)
-
-def get_version():
-    """Read version from pyproject.toml"""
-    try:
-        with open("pyproject.toml", "rb") as f:
-            pyproject = tomli.load(f)
-            return pyproject["project"]["version"]
-    except Exception as e:
-        app.logger.error(f"Error reading version from pyproject.toml: {e}")
-        return "unknown"
 
 def get_models_version():
     """Read models version from models.yaml"""
