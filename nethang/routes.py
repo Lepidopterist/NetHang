@@ -10,6 +10,8 @@ Date: 2025-05-19
 import os
 import netifaces
 import hashlib
+import hmac
+import secrets
 import subprocess
 import tomli
 import yaml
@@ -46,6 +48,11 @@ def load_or_create_secret_key():
     return key
 
 app.config['SECRET_KEY'] = load_or_create_secret_key()
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# Off by default since this app is commonly reached over plain HTTP on a LAN;
+# set NETHANG_FORCE_SECURE_COOKIE=1 when deployed behind TLS.
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('NETHANG_FORCE_SECURE_COOKIE', '').lower() in ('1', 'true', 'yes')
 socketio.init_app(app)
 
 ConfigManager().ensure_models()
@@ -86,9 +93,33 @@ def check_privileges():
         'iptables_error': iptables_status.get('error', '')
     }
 
+@app.context_processor
+def inject_csrf_token():
+    """Make the CSRF token available to every template"""
+    return dict(csrf_token=session.get('csrf_token', ''))
+
+def validate_csrf():
+    """Verify the CSRF token on state-changing requests, or return an error response"""
+    token = session.get('csrf_token')
+    submitted = request.headers.get('X-CSRFToken') or request.form.get('csrf_token')
+    if not token or not submitted or not hmac.compare_digest(token, submitted):
+        app.logger.warning(f"CSRF validation failed for {request.method} {request.path}")
+        if request.path.startswith('/api/') or request.is_json:
+            return jsonify({'status': 'error', 'message': 'Invalid or missing CSRF token'}), 403
+        return render_template('error.html', error='Invalid or missing CSRF token, please retry'), 403
+    return None
+
 @app.before_request
 def before_request():
     """Check privileges before each request"""
+    # Every session gets a CSRF token, even pre-login, so the login form itself is covered
+    session.setdefault('csrf_token', secrets.token_hex(32))
+
+    if request.method in ('POST', 'PUT', 'DELETE', 'PATCH'):
+        csrf_error = validate_csrf()
+        if csrf_error:
+            return csrf_error
+
     g.privileges = check_privileges()
     config = SimuPathManager().load_config()
     if 'lan_interface' not in config or 'wan_interface' not in config or config['lan_interface'] == '' or config['wan_interface'] == '':
