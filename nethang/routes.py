@@ -290,8 +290,15 @@ def manage_paths():
 
     # Update path
     if request.method == 'PUT':
-        app.logger.info(f"Updating path {request.json.get('id')}")
-        SimuPathManager().update_path_config(request.json.get('id'), request.json)
+        path_id = request.json.get('id')
+        app.logger.info(f"Updating path {path_id}")
+
+        if path_id is None:
+            return jsonify({'status': 'error', 'message': 'Missing path id'}), 400
+
+        if not SimuPathManager().update_path_config(path_id, request.json):
+            return jsonify({'status': 'error', 'message': 'Path not found'}), 404
+
         return jsonify({'status': 'success', 'message': 'Path updated successfully'})
 
     # Delete path
