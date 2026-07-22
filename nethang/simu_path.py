@@ -13,7 +13,7 @@ import yaml
 import os
 import time
 import json
-from . import app, CONFIG_PATH, CONFIG_FILE, MODELS_FILE, PATHS_FILE, IPT_LOCK_FILE
+from . import app, CONFIG_PATH, CONFIG_FILE, MODELS_FILE, PATHS_FILE, IPT_LOCK_FILE, PATHS_LOCK_FILE
 from multiprocessing import Process
 from dataclasses import dataclass
 from typing import Optional, Dict, List
@@ -647,36 +647,40 @@ class SimuPathManager:
         self.deactivate_all_paths()
 
         # Update paths.yaml
-        paths_data = self.load_paths()
-        for p in paths_data:
-            p['status'] = 'inactive'
+        with ProcLock(PATHS_LOCK_FILE):
+            paths_data = self.load_paths()
+            for p in paths_data:
+                p['status'] = 'inactive'
 
-        self.save_paths(paths_data)
+            self.save_paths(paths_data)
 
     def add_to_path_config(self, path: SimuPath):
         """Add a path to paths.yaml"""
-        paths_data = self.load_paths()
-        paths_data.append(path)
-        self.save_paths(paths_data)
+        with ProcLock(PATHS_LOCK_FILE):
+            paths_data = self.load_paths()
+            paths_data.append(path)
+            self.save_paths(paths_data)
 
     def update_path_config(self, id: int, path):
         """Update a path in paths.yaml"""
-        paths_data = self.load_paths()
-        for i, p in enumerate(paths_data):
-            if int(p['id']) == id:
-                paths_data[i] = path
-                break
-        self.save_paths(paths_data)
+        with ProcLock(PATHS_LOCK_FILE):
+            paths_data = self.load_paths()
+            for i, p in enumerate(paths_data):
+                if int(p['id']) == id:
+                    paths_data[i] = path
+                    break
+            self.save_paths(paths_data)
         self.refresh_paths()
 
     def delete_from_path_config(self, id: int):
         """Delete a path from paths.yaml"""
-        paths_data = self.load_paths()
-        for p in paths_data:
-            if int(p['id']) == id:
-                paths_data.remove(p)
-                break
-        self.save_paths(paths_data)
+        with ProcLock(PATHS_LOCK_FILE):
+            paths_data = self.load_paths()
+            for p in paths_data:
+                if int(p['id']) == id:
+                    paths_data.remove(p)
+                    break
+            self.save_paths(paths_data)
 
     def get_path_config(self, id: int) -> SimuPath:
         """Get a path from paths.yaml"""
@@ -707,12 +711,13 @@ class SimuPathManager:
         self.paths[id].activate()
 
         # Update paths.yaml
-        paths_data = self.load_paths()
-        for p in paths_data:
-            if int(p['id']) == id:
-                p['status'] = 'active'
-                break
-        self.save_paths(paths_data)
+        with ProcLock(PATHS_LOCK_FILE):
+            paths_data = self.load_paths()
+            for p in paths_data:
+                if int(p['id']) == id:
+                    p['status'] = 'active'
+                    break
+            self.save_paths(paths_data)
         self.traffic_monitor.start()
 
     def deactivate_path(self, id: int):
@@ -723,12 +728,13 @@ class SimuPathManager:
         self.paths[id].deactivate()
 
         # Update paths.yaml
-        paths_data = self.load_paths()
-        for p in paths_data:
-            if int(p['id']) == id:
-                p['status'] = 'inactive'
-                break
-        self.save_paths(paths_data)
+        with ProcLock(PATHS_LOCK_FILE):
+            paths_data = self.load_paths()
+            for p in paths_data:
+                if int(p['id']) == id:
+                    p['status'] = 'inactive'
+                    break
+            self.save_paths(paths_data)
 
         if len(self.get_active_paths()) == 0:
             self.traffic_monitor.stop()
