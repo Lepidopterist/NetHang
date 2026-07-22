@@ -15,7 +15,7 @@ import tomli
 import yaml
 import sys
 import signal
-from . import app, ID_LOCK_FILE, ADMIN_USERNAME, PATHS_FILE
+from . import app, ID_LOCK_FILE, ADMIN_USERNAME, PATHS_FILE, SECRET_KEY_FILE
 from flask import render_template, request, jsonify, redirect, url_for, session, g
 from functools import wraps
 from nethang.proc_lock import ProcLock
@@ -25,7 +25,25 @@ from nethang.extensions import socketio
 from nethang.config_manager import ConfigManager
 from nethang.version import __version__
 
-app.config['SECRET_KEY'] = os.urandom(24)
+def load_or_create_secret_key():
+    """Load the persisted Flask session secret key, generating one on first run.
+
+    Generating a fresh key on every process start (the previous behavior)
+    invalidates every existing session on each restart/redeploy.
+    """
+    if os.path.exists(SECRET_KEY_FILE):
+        with open(SECRET_KEY_FILE, 'rb') as f:
+            key = f.read()
+            if key:
+                return key
+
+    key = os.urandom(24)
+    with open(SECRET_KEY_FILE, 'wb') as f:
+        f.write(key)
+    os.chmod(SECRET_KEY_FILE, 0o600)
+    return key
+
+app.config['SECRET_KEY'] = load_or_create_secret_key()
 socketio.init_app(app)
 
 ConfigManager().ensure_models()
