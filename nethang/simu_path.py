@@ -660,16 +660,23 @@ class SimuPathManager:
             paths_data.append(path)
             self.save_paths(paths_data)
 
-    def update_path_config(self, id: int, path):
-        """Update a path in paths.yaml"""
+    def update_path_config(self, id: int, path) -> bool:
+        """Update a path in paths.yaml. Returns whether a matching path was found."""
         with ProcLock(PATHS_LOCK_FILE):
             paths_data = self.load_paths()
+            found = False
             for i, p in enumerate(paths_data):
                 if int(p['id']) == id:
                     paths_data[i] = path
+                    found = True
                     break
+
+            if not found:
+                return False
+
             self.save_paths(paths_data)
         self.refresh_paths()
+        return True
 
     def delete_from_path_config(self, id: int):
         """Delete a path from paths.yaml"""
