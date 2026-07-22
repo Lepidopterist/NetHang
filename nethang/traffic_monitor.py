@@ -230,7 +230,7 @@ class TrafficMonitor:
         return stats_
 
     def _get_current_stats(self) -> Dict:
-        iptables_output = self._run_command(['iptables', '-nvxL', 'FORWARD', '-t', 'mangle'])
+        iptables_output = self._run_command(['iptables', '-w', '5', '-nvxL', 'FORWARD', '-t', 'mangle'])
         tc_lan_output = self._run_command(['tc', '-s', 'qdisc', 'show', 'dev', self.lan_iface])
         tc_wan_output = self._run_command(['tc', '-s', 'qdisc', 'show', 'dev', self.wan_iface])
 
