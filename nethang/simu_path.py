@@ -394,7 +394,7 @@ class SimuPath:
 
         def create_iptables_rule(direction_ : str):
             with ProcLock(IPT_LOCK_FILE):
-                SimuPathManager.run_cmd(['iptables', '-t', 'mangle', '-A', 'FORWARD',
+                SimuPathManager.run_cmd(['iptables', '-w', '5', '-t', 'mangle', '-A', 'FORWARD',
                     '-i', self.__direction[direction_]['from'], '-o', self.__direction[direction_]['to'],
                     *self._build_filter_args(direction_),
                     '-j', 'MARK', '--set-mark', str(self.filter.mark)])
@@ -406,7 +406,7 @@ class SimuPath:
         """Delete the path in system by deleting the iptables rule"""
         def delete_iptables_rule(direction_ : str):
             with ProcLock(IPT_LOCK_FILE):
-                SimuPathManager.run_cmd(['iptables', '-t', 'mangle', '-D', 'FORWARD',
+                SimuPathManager.run_cmd(['iptables', '-w', '5', '-t', 'mangle', '-D', 'FORWARD',
                     '-i', self.__direction[direction_]['from'], '-o', self.__direction[direction_]['to'],
                     *self._build_filter_args(direction_),
                     '-j', 'MARK', '--set-mark', str(self.filter.mark)])

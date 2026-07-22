@@ -174,7 +174,7 @@ def check_iptables():
             }
 
         # Run a harmless iptables command (e.g., list rules)
-        result = subprocess.run(['iptables', '-L', '-n'], capture_output=True, text=True, check=True)
+        result = subprocess.run(['iptables', '-w', '5', '-L', '-n'], capture_output=True, text=True, check=True)
         return {
             'iptables_access': True,
             'output': result.stdout,
