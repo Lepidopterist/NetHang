@@ -151,12 +151,14 @@ def check_tc():
             }
 
         # Probe write access with a self-contained add+delete on loopback,
-        # so no tc state is left behind after the check
+        # so no tc state is left behind after the check. Handle 0 is
+        # reserved/invalid in the kernel ("handle cannot be zero"), so a
+        # real root qdisc handle (1:) is used instead.
         result = subprocess.run(
-            ['tc', 'qdisc', 'add', 'dev', 'lo', 'handle', '0', 'netem', 'delay', '0ms'],
+            ['tc', 'qdisc', 'add', 'dev', 'lo', 'root', 'handle', '1:', 'netem', 'delay', '0ms'],
             capture_output=True, text=True, check=True)
         subprocess.run(
-            ['tc', 'qdisc', 'del', 'dev', 'lo', 'handle', '0', 'netem'],
+            ['tc', 'qdisc', 'del', 'dev', 'lo', 'root'],
             capture_output=True, text=True, check=False)
         return {
             'tc_access': True,
