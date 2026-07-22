@@ -316,8 +316,11 @@ def activate_path(path_id):
     try:
         SimuPathManager().activate_path(int(path_id))
         return jsonify({'status': 'success', 'message': 'Path activated successfully'})
+    except ValueError as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 404
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)})
+        app.logger.error(f"Error activating path {path_id}: {e}")
+        return jsonify({'status': 'error', 'message': 'Failed to activate path'}), 500
 
 @app.route('/api/paths/<path_id>/deactivate', methods=['POST'])
 @login_required
@@ -326,8 +329,11 @@ def deactivate_path(path_id):
     try:
         SimuPathManager().deactivate_path(int(path_id))
         return jsonify({'status': 'success', 'message': 'Path deactivated successfully'})
+    except ValueError as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 404
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)})
+        app.logger.error(f"Error deactivating path {path_id}: {e}")
+        return jsonify({'status': 'error', 'message': 'Failed to deactivate path'}), 500
 
 @socketio.on('connect')
 def handle_connect():
@@ -422,4 +428,5 @@ def settings_api():
             SimuPathManager().save_config(config)
             return jsonify({'status': 'success'})
         except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)})
+            app.logger.error(f"Error saving settings: {e}")
+            return jsonify({'status': 'error', 'message': 'Failed to save settings'}), 500
