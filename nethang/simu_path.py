@@ -402,36 +402,6 @@ class SimuPath:
     def delete(self):
         """Delete the path in system by deleting the iptables rule"""
         def delete_iptables_rule(direction_ : str):
-            iptables_str_ = ''
-
-            if self.filter.lan_ip:
-                if direction_ == 'uplink':
-                    iptables_str_ += ' -s {}'.format(self.filter.lan_ip)
-                else:
-                    iptables_str_ += ' -d {}'.format(self.filter.lan_ip)
-
-            if self.filter.wan_ip:
-                if direction_ == 'uplink':
-                    iptables_str_ += ' -d {}'.format(self.filter.wan_ip)
-                else:
-                    iptables_str_ += ' -s {}'.format(self.filter.wan_ip)
-
-            if self.filter.protocol in ['udp', 'tcp']:
-                iptables_str_ += ' -p {}'.format(self.filter.protocol)
-                lan_port_ = self._format_port(self.filter.lan_port)
-                if lan_port_:
-                    if direction_ == 'uplink':
-                        iptables_str_ += ' --sport {}'.format(lan_port_)
-                    else:
-                        iptables_str_ += ' --dport {}'.format(lan_port_)
-
-                wan_port_ = self._format_port(self.filter.wan_port)
-                if wan_port_:
-                    if direction_ == 'uplink':
-                        iptables_str_ += ' --dport {}'.format(wan_port_)
-                    else:
-                        iptables_str_ += ' --sport {}'.format(wan_port_)
-
             with ProcLock(IPT_LOCK_FILE):
                 SimuPathManager.run_cmd(['iptables', '-t', 'mangle', '-D', 'FORWARD',
                     '-i', self.__direction[direction_]['from'], '-o', self.__direction[direction_]['to'],
