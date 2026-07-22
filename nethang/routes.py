@@ -10,6 +10,7 @@ Date: 2025-05-19
 import os
 import netifaces
 import hashlib
+import hmac
 import subprocess
 import tomli
 import yaml
@@ -108,7 +109,7 @@ def _is_legacy_md5_hash(hashed_password):
 def verify_password(password, hashed_password):
     """Verify a password against its hash, honoring legacy MD5 hashes"""
     if _is_legacy_md5_hash(hashed_password):
-        return hashlib.md5(password.encode()).hexdigest() == hashed_password
+        return hmac.compare_digest(hashlib.md5(password.encode()).hexdigest(), hashed_password)
     return check_password_hash(hashed_password, password)
 
 def login_required(f):
